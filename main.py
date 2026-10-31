@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 
+
 # --- optional format support (install as needed) ---
 # pip install pypdf            (PDF)
 # pip install striprtf         (RTF)
@@ -200,8 +201,7 @@ def load_state():
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self._setup_style()
-        self.title("Text Scanner — Dictionary")
+        self.title("Text—>Dictionary")
 
         # --- data ---
         self.dictionary = {}          # word -> count
@@ -215,6 +215,12 @@ class App(tk.Tk):
         self.rows_data = []
         self._drag_active = False
 
+        # --- zoom ---
+        self.scale = 1.0
+        self._base_geom = (1400.0, 720.0)   # unscaled window size
+        self._cols_base = ()                # filled in _build_ui
+
+        self._setup_style()
         self._build_ui()
         self._restore_state()
         self._refresh()
@@ -222,6 +228,10 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------ STYLE
+    def _px(self, n):
+        """Scale a pixel value by the current zoom factor."""
+        return max(1, int(round(n * self.scale)))
+
     def _setup_style(self):
         s = ttk.Style(self)
         try:
@@ -240,24 +250,27 @@ class App(tk.Tk):
 
         self.configure(bg=BG)
         s.configure(".", background=BG, foreground=TEXT,
-                    font=("Segoe UI", 10))
+                    font=("Segoe UI", self._px(10)))
         s.configure("TFrame", background=BG)
         s.configure("Card.TFrame", background=CARD)
 
         s.configure("TLabel", background=BG, foreground=TEXT)
-        s.configure("Stats.TLabel", foreground=MUTED, font=("Segoe UI", 9))
-        s.configure("Title.TLabel", font=("Segoe UI Semibold", 11),
+        s.configure("Stats.TLabel", foreground=MUTED,
+                    font=("Segoe UI", self._px(9)))
+        s.configure("Title.TLabel",
+                    font=("Segoe UI Semibold", self._px(11)),
                     foreground=TEXT)
 
         # Buttons
-        s.configure("TButton", padding=(10, 6), relief="flat",
-                    background=CARD, foreground=TEXT, borderwidth=1)
+        s.configure("TButton", padding=(self._px(10), self._px(6)),
+                    relief="flat", background=CARD, foreground=TEXT,
+                    borderwidth=1)
         s.map("TButton",
               background=[("active", "#e8eefc"), ("pressed", "#dbe5fb")],
               bordercolor=[("!disabled", BORDER)])
 
         s.configure("Primary.TButton", background=ACCENT, foreground="white",
-                    font=("Segoe UI Semibold", 10))
+                    font=("Segoe UI Semibold", self._px(10)))
         s.map("Primary.TButton",
               background=[("active", ACCENT2), ("pressed", "#1f45c2")])
 
@@ -266,26 +279,29 @@ class App(tk.Tk):
         s.map("Danger.TButton", background=[("active", "#fbd9da")])
 
         # Tabs (segmented)
-        s.configure("Tab.TButton", padding=(14, 7), relief="flat",
-                    background="#e9edf3", foreground=MUTED,
-                    font=("Segoe UI", 10))
-        s.configure("TabActive.TButton", padding=(14, 7), relief="flat",
-                    background=CARD, foreground=ACCENT,
-                    font=("Segoe UI Semibold", 10))
+        s.configure("Tab.TButton", padding=(self._px(14), self._px(7)),
+                    relief="flat", background="#e9edf3", foreground=MUTED,
+                    font=("Segoe UI", self._px(10)))
+        s.configure("TabActive.TButton", padding=(self._px(14), self._px(7)),
+                    relief="flat", background=CARD, foreground=ACCENT,
+                    font=("Segoe UI Semibold", self._px(10)))
 
         # Treeview
         s.configure("Treeview", background=CARD, fieldbackground=CARD,
-                    foreground=TEXT, rowheight=28, borderwidth=0)
+                    foreground=TEXT, rowheight=self._px(28), borderwidth=0,
+                    font=("Segoe UI", self._px(10)))
         s.configure("Treeview.Heading", background="#eef1f6",
                     foreground=TEXT, relief="flat",
-                    font=("Segoe UI Semibold", 10), padding=(8, 6))
+                    font=("Segoe UI Semibold", self._px(10)),
+                    padding=(self._px(8), self._px(6)))
         s.map("Treeview",
               background=[("selected", "#dbe5fb")],
               foreground=[("selected", TEXT)])
 
-        # Scrollbars slimmer — vertical only needed
+        # Scrollbars
         s.configure("Vertical.TScrollbar", background="#cdd5e0",
-                    troughcolor=BG, borderwidth=0, arrowsize=12)
+                    troughcolor=BG, borderwidth=0,
+                    arrowsize=self._px(12))
 
         # Paned window
         s.configure("TPanedwindow", background=BG)
@@ -293,12 +309,12 @@ class App(tk.Tk):
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
         # ---- top bar ----
-        bar = ttk.Frame(self, padding=(12, 10))
+        bar = ttk.Frame(self, padding=(self._px(12), self._px(10)))
         bar.pack(side=tk.TOP, fill=tk.X)
 
         ttk.Label(bar, text="📚  Text Scanner", style="Title.TLabel").pack(side=tk.LEFT)
         ttk.Label(bar, text="dictionary", style="Stats.TLabel").pack(
-            side=tk.LEFT, padx=(6, 0))
+            side=tk.LEFT, padx=(self._px(6), 0))
 
         ttk.Button(bar, text="Choose File", style="Primary.TButton",
                    command=self.load_text_file).pack(side=tk.RIGHT)
@@ -306,20 +322,22 @@ class App(tk.Tk):
         # separator line
         tk.Frame(self, bg="#d8dee7", height=1).pack(fill=tk.X)
 
-        paned = tk.PanedWindow(self, orient=tk.HORIZONTAL,
-                               bg="#f4f6f8", sashwidth=6,
-                               sashrelief=tk.FLAT, bd=0)
-        paned.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+        self.paned = tk.PanedWindow(self, orient=tk.HORIZONTAL,
+                                    bg="#f4f6f8", sashwidth=self._px(6),
+                                    sashrelief=tk.FLAT, bd=0)
+        self.paned.pack(fill=tk.BOTH, expand=True,
+                        padx=self._px(12), pady=self._px(12))
 
         # ================= LEFT: text card =================
-        left = ttk.Frame(paned, style="Card.TFrame", padding=1)
-        paned.add(left, minsize=300, stretch="always")
+        left = ttk.Frame(self.paned, style="Card.TFrame", padding=1)
+        self.paned.add(left, minsize=self._px(300), stretch="always")
 
         text_frame = ttk.Frame(left, style="Card.TFrame")
         text_frame.pack(fill=tk.BOTH, expand=True)
         self.text = tk.Text(text_frame, wrap=tk.WORD, undo=True,
-                            relief="flat", bd=0, padx=10, pady=8,
-                            font=("Consolas", 10), bg="#ffffff",
+                            relief="flat", bd=0,
+                            padx=self._px(10), pady=self._px(8),
+                            font=("Consolas", self._px(10)), bg="#ffffff",
                             fg="#1f2430", insertbackground="#3d6bfb",
                             selectbackground="#dbe5fb")
         text_vsb = ttk.Scrollbar(text_frame, orient="vertical",
@@ -336,32 +354,37 @@ class App(tk.Tk):
         self.text.bind("<Button-5>", self._on_text_wheel)
 
         # ================= RIGHT: table card =================
-        right = ttk.Frame(paned, style="Card.TFrame")
-        paned.add(right, minsize=400, stretch="always")
+        right = ttk.Frame(self.paned, style="Card.TFrame")
+        self.paned.add(right, minsize=self._px(400), stretch="always")
 
         # stats line
-        stats_bar = ttk.Frame(right, style="Card.TFrame", padding=(10, 6, 10, 0))
+        stats_bar = ttk.Frame(right, style="Card.TFrame",
+                              padding=(self._px(10), self._px(6),
+                                       self._px(10), 0))
         stats_bar.pack(fill=tk.X)
         self.stats_var = tk.StringVar(value="Dictionary is empty — choose a file to scan it")
         ttk.Label(stats_bar, textvariable=self.stats_var,
                   style="Stats.TLabel").pack(side=tk.LEFT)
-        
+
         # tab bar + load/save on one line
-        tabbar = ttk.Frame(right, style="Card.TFrame", padding=(10, 8, 10, 0))
+        tabbar = ttk.Frame(right, style="Card.TFrame",
+                           padding=(self._px(10), self._px(8),
+                                    self._px(10), 0))
         tabbar.pack(fill=tk.X)
 
         # right-side buttons first (so they stay right when packing left items)
         ttk.Button(tabbar, text="Save table",
                    command=self.save_csv).pack(side=tk.RIGHT)
         ttk.Button(tabbar, text="Load table",
-                   command=self.load_csv).pack(side=tk.RIGHT, padx=(0, 4))
+                   command=self.load_csv).pack(side=tk.RIGHT,
+                                                padx=(0, self._px(4)))
 
         self.tab_buttons = {}
         for key, label in (("all", "All words"),
                            ("learned", "Learned")):
             b = ttk.Button(tabbar, text=label, style="Tab.TButton",
                            command=lambda k=key: self.switch_tab(k))
-            b.pack(side=tk.LEFT, padx=(0, 4))
+            b.pack(side=tk.LEFT, padx=(0, self._px(4)))
             self.tab_buttons[key] = b
 
 
@@ -369,29 +392,33 @@ class App(tk.Tk):
         self.selbar = tk.Frame(right, bg="#fffbe0", bd=1, relief=tk.SOLID)
         self.sel_label = tk.Label(self.selbar, text="", bg="#fffbe0",
                                   fg="#1f2430", anchor="w",
-                                  font=("Segoe UI", 9))
-        self.sel_label.pack(side=tk.LEFT, padx=8)
+                                  font=("Segoe UI", self._px(9)))
+        self.sel_label.pack(side=tk.LEFT, padx=self._px(8))
         self.sel_actions = tk.Frame(self.selbar, bg="#fffbe0")
         self.sel_actions.pack(side=tk.LEFT)
         ttk.Button(self.selbar, text="Clear",
-                   command=self.clear_selection).pack(side=tk.LEFT, padx=8)
+                   command=self.clear_selection).pack(side=tk.LEFT,
+                                                       padx=self._px(8))
 
         # table
-        table_frame = ttk.Frame(right, style="Card.TFrame", padding=(10, 6, 10, 10))
+        table_frame = ttk.Frame(right, style="Card.TFrame",
+                                padding=(self._px(10), self._px(6),
+                                         self._px(10), self._px(10)))
         table_frame.pack(fill=tk.BOTH, expand=True)
 
         cols = ("word", "count", "translate", "actions")
         self.tree = ttk.Treeview(table_frame, columns=cols, show="headings",
                                  selectmode="extended")
-        for c, w, label in (
-            ("word", 160, "Word"),
-            ("count", 90, "Occurrences"),
-            ("translate", 260, "Translate"),
-            ("actions", 210, "Actions"),
-        ):
+
+        self._cols_base = (
+            ("word",      160, "Word",         "w"),
+            ("count",      90, "Occurrences",  "center"),
+            ("translate", 260, "Translate",    "w"),
+            ("actions",   210, "Actions",      "w"),
+        )
+        for c, w, label, anchor in self._cols_base:
             self.tree.heading(c, text=label)
-            self.tree.column(c, width=w,
-                             anchor="w" if c != "count" else "center")
+            self.tree.column(c, width=self._px(w), anchor=anchor)
 
         vsb = ttk.Scrollbar(table_frame, orient="vertical",
                             command=self.tree.yview)
@@ -413,6 +440,60 @@ class App(tk.Tk):
         self.tree.tag_configure("untranslated", foreground="#9aa3b2")
         self.tree.tag_configure("odd", background="#fafbfd")
         self.tree.tag_configure("even", background="#ffffff")
+
+        self._bind_zoom_keys()
+
+    # ------------------------------------------------------------ zoom
+    def _bind_zoom_keys(self):
+        """Ctrl + / Ctrl - / Ctrl 0 work no matter which widget has focus."""
+        for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
+            self.bind_all(seq, lambda e: self._zoom_by(+1), add="+")
+        for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
+            self.bind_all(seq, lambda e: self._zoom_by(-1), add="+")
+        for seq in ("<Control-0>", "<Control-KP_0>"):
+            self.bind_all(seq, lambda e: self._zoom_reset(), add="+")
+
+    def _zoom_by(self, direction):
+        self._set_scale(round(self.scale + direction * 0.1, 2))
+        return "break"
+
+    def _zoom_reset(self):
+        self._set_scale(1.0)
+        return "break"
+
+    def _set_scale(self, value):
+        value = max(0.5, min(3.0, value))
+        if abs(value - self.scale) < 1e-6:
+            return
+        # Remember the "unscaled" size from the current real size.
+        try:
+            w, h = self.winfo_width(), self.winfo_height()
+            if w > 1 and h > 1 and self.scale > 0:
+                self._base_geom = (w / self.scale, h / self.scale)
+        except tk.TclError:
+            pass
+        self.scale = value
+        self._apply_scale()
+
+    def _apply_scale(self):
+        """Re-apply scaled font sizes and pixel dimensions to every widget."""
+        self._setup_style()
+
+        self.text.configure(
+            font=("Consolas", self._px(10)),
+            padx=self._px(10), pady=self._px(8))
+
+        for c, w, _label, _anchor in self._cols_base:
+            self.tree.column(c, width=self._px(w))
+
+        self.paned.configure(sashwidth=self._px(6))
+        self.paned.pack_configure(padx=self._px(12), pady=self._px(12))
+        panes = self.paned.panes()
+        if len(panes) >= 2:
+            self.paned.paneconfigure(panes[0], minsize=self._px(300))
+            self.paned.paneconfigure(panes[1], minsize=self._px(400))
+
+        self.sel_label.configure(font=("Segoe UI", self._px(9)))
 
     # --------------------------------------------------- mousewheel
     def _on_text_wheel(self, event):
@@ -546,17 +627,20 @@ class App(tk.Tk):
         if len(self.selected) <= 1:
             self.selbar.pack_forget()
             return
-        self.selbar.pack(fill=tk.X, pady=(4, 0), before=self.tree.master)
+        self.selbar.pack(fill=tk.X, pady=(self._px(4), 0),
+                         before=self.tree.master)
         self.sel_label.config(text=f"{len(self.selected)} selected")
         for child in self.sel_actions.winfo_children():
             child.destroy()
 
         if self.current_tab == "all":
             ttk.Button(self.sel_actions, text="✓ I know all",
-                       command=self.bulk_learn).pack(side=tk.LEFT, padx=2)
+                       command=self.bulk_learn).pack(side=tk.LEFT,
+                                                      padx=self._px(2))
         else:
             ttk.Button(self.sel_actions, text="↩ Return all",
-                       command=self.bulk_unlearn).pack(side=tk.LEFT, padx=2)
+                       command=self.bulk_unlearn).pack(side=tk.LEFT,
+                                                        padx=self._px(2))
 
     def clear_selection(self):
         self.selected.clear()
@@ -588,16 +672,16 @@ class App(tk.Tk):
         word = self._row_word(iid)
         buttons = self._action_buttons_for(word)
 
-        # measure rendered widths using a temp font matching the tree
+        # measure rendered widths using the same font as the tree
         import tkinter.font as tkfont
-        f = tkfont.nametofont("TkDefaultFont")
-        pad = 8
+        f = tkfont.Font(font=("Segoe UI", self._px(10)))
+        pad = self._px(8)
         x_cursor = 2
         for label, cb in buttons:
             text_w = f.measure(f" {label} ") + pad
             if x_cursor <= rel_x <= x_cursor + text_w:
                 return label, cb, word
-            x_cursor += text_w + 4
+            x_cursor += text_w + self._px(4)
         return None
 
     def _on_motion(self, event):
