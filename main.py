@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""
-Text Scanner — Dictionary (Python/Tkinter port)
-Translations come from dict.json — no manual editing.
-"""
-
-import csv
-import json
-import os
-import re
+import csv, json, os, re
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 
+import ui.colors
 
 # --- optional format support (install as needed) ---
 # pip install pypdf            (PDF)
@@ -220,6 +213,10 @@ class App(tk.Tk):
         self._base_geom = (1400.0, 720.0)   # unscaled window size
         self._cols_base = ()                # filled in _build_ui
 
+        # theme: default light, restored from state.json later in _restore_state
+        self.theme_name = "light"
+        self.palette = ui.colors.LIGHT
+
         self._setup_style()
         self._build_ui()
         self._restore_state()
@@ -231,7 +228,7 @@ class App(tk.Tk):
     def _px(self, n):
         """Scale a pixel value by the current zoom factor."""
         return max(1, int(round(n * self.scale)))
-
+        
     def _setup_style(self):
         s = ttk.Style(self)
         try:
@@ -239,177 +236,206 @@ class App(tk.Tk):
         except tk.TclError:
             pass
 
-        BG      = "#f4f6f8"
-        CARD    = "#ffffff"
-        ACCENT  = "#3d6bfb"
-        ACCENT2 = "#2a56e0"
-        DANGER  = "#e5484d"
-        TEXT    = "#1f2430"
-        MUTED   = "#6b7280"
-        BORDER  = "#d8dee7"
+        p = self.palette
+        self.configure(bg=p["bg"])
 
-        self.configure(bg=BG)
-        s.configure(".", background=BG, foreground=TEXT,
+        s.configure(".", background=p["bg"], foreground=p["text"],
                     font=("Segoe UI", self._px(10)))
-        s.configure("TFrame", background=BG)
-        s.configure("Card.TFrame", background=CARD)
+        s.configure("TFrame", background=p["bg"])
+        s.configure("Card.TFrame", background=p["card"])
 
-        s.configure("TLabel", background=BG, foreground=TEXT)
-        s.configure("Stats.TLabel", foreground=MUTED,
+        s.configure("TLabel", background=p["bg"], foreground=p["text"])
+        s.configure("Stats.TLabel", foreground=p["muted"],
                     font=("Segoe UI", self._px(9)))
         s.configure("Title.TLabel",
                     font=("Segoe UI Semibold", self._px(11)),
-                    foreground=TEXT)
+                    foreground=p["text"])
 
         # Buttons
         s.configure("TButton", padding=(self._px(10), self._px(6)),
-                    relief="flat", background=CARD, foreground=TEXT,
+                    relief="flat", background=p["card"], foreground=p["text"],
                     borderwidth=1)
         s.map("TButton",
-              background=[("active", "#e8eefc"), ("pressed", "#dbe5fb")],
-              bordercolor=[("!disabled", BORDER)])
+            background=[("active", p["accent_soft"]),
+                        ("pressed", p["accent_soft2"])],
+            foreground=[("disabled", p["muted"])],
+            bordercolor=[("!disabled", p["border"])])
 
-        s.configure("Primary.TButton", background=ACCENT, foreground="white",
+        s.configure("Primary.TButton", background=p["accent"], foreground="white",
                     font=("Segoe UI Semibold", self._px(10)))
         s.map("Primary.TButton",
-              background=[("active", ACCENT2), ("pressed", "#1f45c2")])
+            background=[("active", p["accent2"]), ("pressed", p["accent3"])])
 
-        s.configure("Danger.TButton", background="#fdecec",
-                    foreground=DANGER)
-        s.map("Danger.TButton", background=[("active", "#fbd9da")])
+        s.configure("Danger.TButton", background=p["danger_bg"],
+                    foreground=p["danger"])
+        s.map("Danger.TButton", background=[("active", p["danger_bg2"])])
 
         # Tabs (segmented)
         s.configure("Tab.TButton", padding=(self._px(14), self._px(7)),
-                    relief="flat", background="#e9edf3", foreground=MUTED,
+                    relief="flat", background=p["tab_bg"], foreground=p["muted"],
                     font=("Segoe UI", self._px(10)))
         s.configure("TabActive.TButton", padding=(self._px(14), self._px(7)),
-                    relief="flat", background=CARD, foreground=ACCENT,
+                    relief="flat", background=p["card"], foreground=p["accent"],
                     font=("Segoe UI Semibold", self._px(10)))
 
         # Treeview
-        s.configure("Treeview", background=CARD, fieldbackground=CARD,
-                    foreground=TEXT, rowheight=self._px(28), borderwidth=0,
+        s.configure("Treeview", background=p["card"], fieldbackground=p["card"],
+                    foreground=p["text"], rowheight=self._px(28), borderwidth=0,
                     font=("Segoe UI", self._px(10)))
-        s.configure("Treeview.Heading", background="#eef1f6",
-                    foreground=TEXT, relief="flat",
+        s.configure("Treeview.Heading", background=p["head_bg"],
+                    foreground=p["text"], relief="flat",
                     font=("Segoe UI Semibold", self._px(10)),
                     padding=(self._px(8), self._px(6)))
         s.map("Treeview",
-              background=[("selected", "#dbe5fb")],
-              foreground=[("selected", TEXT)])
+            background=[("selected", p["accent_soft2"])],
+            foreground=[("selected", p["text"])])
 
         # Scrollbars
-        s.configure("Vertical.TScrollbar", background="#cdd5e0",
-                    troughcolor=BG, borderwidth=0,
+        s.configure("Vertical.TScrollbar", background=p["scroll"],
+                    troughcolor=p["bg"], borderwidth=0,
                     arrowsize=self._px(12))
+        s.map("Vertical.TScrollbar",
+            background=[("active", p["muted"])])
 
         # Paned window
-        s.configure("TPanedwindow", background=BG)
+        s.configure("TPanedwindow", background=p["bg"])
+        
+    def toggle_theme(self):
+        self.set_theme("dark" if self.theme_name == "light" else "light")
+    
+    def set_theme(self, name):
+        if name not in ("light", "dark"):
+            name = "light"
 
+        self.theme_name = name
+        self.palette = ui.colors.DARK if name == "dark" else ui.colors.LIGHT
+
+        # remember current geometry and text content so the rebuild is lossless
+        geom = self.geometry()
+        old_text = self.text.get("1.0", "end-1c")   # <-- save text here
+        yview = self.text.yview()                   # <-- optional: keep scroll pos
+
+        # tear down all children of the root window
+        for child in list(self.winfo_children()):
+            child.destroy()
+
+        self._setup_style()
+        self._build_ui()
+        self.geometry(geom)
+
+        # restore text and scroll position
+        if old_text:
+            self.text.insert("1.0", old_text)
+            try:
+                self.text.yview_moveto(yview[0])
+            except tk.TclError:
+                pass
+
+        # redraw table from existing data
+        self._refresh()
+        self._update_theme_button()
+        
+    def _update_theme_button(self):
+        if not hasattr(self, "theme_btn"):
+            return
+        if self.theme_name == "dark":
+            self.theme_btn.config(text="☀ Light")
+        else:
+            self.theme_btn.config(text="🌙 Dark")
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
         # ---- top bar ----
         bar = ttk.Frame(self, padding=(self._px(12), self._px(10)))
         bar.pack(side=tk.TOP, fill=tk.X)
-
         ttk.Label(bar, text="📚  Text Scanner", style="Title.TLabel").pack(side=tk.LEFT)
         ttk.Label(bar, text="dictionary", style="Stats.TLabel").pack(
             side=tk.LEFT, padx=(self._px(6), 0))
-
+        # store the reference so we can update the icon when theme changes
+        self.theme_btn = ttk.Button(bar, text="🌙 Dark",
+                                    command=self.toggle_theme)
+        self.theme_btn.pack(side=tk.RIGHT, padx=(0, self._px(6)))
+        
         ttk.Button(bar, text="Choose File", style="Primary.TButton",
-                   command=self.load_text_file).pack(side=tk.RIGHT)
-
+                command=self.load_text_file).pack(side=tk.RIGHT)
         # separator line
         tk.Frame(self, bg="#d8dee7", height=1).pack(fill=tk.X)
-
         self.paned = tk.PanedWindow(self, orient=tk.HORIZONTAL,
-                                    bg="#f4f6f8", sashwidth=self._px(6),
+                                    bg=self.palette["bg"],
+                                    sashwidth=self._px(6),
                                     sashrelief=tk.FLAT, bd=0)
+        
         self.paned.pack(fill=tk.BOTH, expand=True,
                         padx=self._px(12), pady=self._px(12))
-
         # ================= LEFT: text card =================
         left = ttk.Frame(self.paned, style="Card.TFrame", padding=1)
         self.paned.add(left, minsize=self._px(300), stretch="always")
-
         text_frame = ttk.Frame(left, style="Card.TFrame")
         text_frame.pack(fill=tk.BOTH, expand=True)
         self.text = tk.Text(text_frame, wrap=tk.WORD, undo=True,
-                            relief="flat", bd=0,
-                            padx=self._px(10), pady=self._px(8),
-                            font=("Consolas", self._px(10)), bg="#ffffff",
-                            fg="#1f2430", insertbackground="#3d6bfb",
-                            selectbackground="#dbe5fb")
+                relief="flat", bd=0,
+                padx=self._px(10), pady=self._px(8),
+                font=("Consolas", self._px(10)),
+                bg=self.palette["text_widget_bg"],
+                fg=self.palette["text_widget_fg"],
+                insertbackground=self.palette["insert"],
+                selectbackground=self.palette["accent_soft2"])
         text_vsb = ttk.Scrollbar(text_frame, orient="vertical",
-                                 command=self.text.yview)
+                                command=self.text.yview)
         self.text.configure(yscrollcommand=text_vsb.set)
         self.text.grid(row=0, column=0, sticky="nsew")
         text_vsb.grid(row=0, column=1, sticky="ns")
         text_frame.rowconfigure(0, weight=1)
         text_frame.columnconfigure(0, weight=1)
-        self.text.tag_configure("highlight", background="#fff3b0")
-
+        self.text.tag_configure("highlight", background=self.palette["highlight"])
         self.text.bind("<MouseWheel>", self._on_text_wheel)
         self.text.bind("<Button-4>", self._on_text_wheel)
         self.text.bind("<Button-5>", self._on_text_wheel)
-
         # ================= RIGHT: table card =================
         right = ttk.Frame(self.paned, style="Card.TFrame")
         self.paned.add(right, minsize=self._px(400), stretch="always")
-
         # stats line
         stats_bar = ttk.Frame(right, style="Card.TFrame",
-                              padding=(self._px(10), self._px(6),
-                                       self._px(10), 0))
+                            padding=(self._px(10), self._px(6),
+                                    self._px(10), 0))
         stats_bar.pack(fill=tk.X)
         self.stats_var = tk.StringVar(value="Dictionary is empty — choose a file to scan it")
         ttk.Label(stats_bar, textvariable=self.stats_var,
-                  style="Stats.TLabel").pack(side=tk.LEFT)
-
+                style="Stats.TLabel").pack(side=tk.LEFT)
         # tab bar + load/save on one line
         tabbar = ttk.Frame(right, style="Card.TFrame",
-                           padding=(self._px(10), self._px(8),
+                        padding=(self._px(10), self._px(8),
                                     self._px(10), 0))
         tabbar.pack(fill=tk.X)
-
         # right-side buttons first (so they stay right when packing left items)
         ttk.Button(tabbar, text="Save table",
-                   command=self.save_csv).pack(side=tk.RIGHT)
+                command=self.save_csv).pack(side=tk.RIGHT)
         ttk.Button(tabbar, text="Load table",
-                   command=self.load_csv).pack(side=tk.RIGHT,
+                command=self.load_csv).pack(side=tk.RIGHT,
                                                 padx=(0, self._px(4)))
-
         self.tab_buttons = {}
         for key, label in (("all", "All words"),
-                           ("learned", "Learned")):
+                        ("learned", "Learned")):
             b = ttk.Button(tabbar, text=label, style="Tab.TButton",
-                           command=lambda k=key: self.switch_tab(k))
+                        command=lambda k=key: self.switch_tab(k))
             b.pack(side=tk.LEFT, padx=(0, self._px(4)))
             self.tab_buttons[key] = b
-
-
-        # selection bar
-        self.selbar = tk.Frame(right, bg="#fffbe0", bd=1, relief=tk.SOLID)
-        self.sel_label = tk.Label(self.selbar, text="", bg="#fffbe0",
-                                  fg="#1f2430", anchor="w",
-                                  font=("Segoe UI", self._px(9)))
+        self.selbar = tk.Frame(right, bg=self.palette["sel_bg"],
+                            bd=1, relief=tk.SOLID,
+                            highlightbackground=self.palette["border"])
+        self.sel_label = tk.Label(self.selbar, text="", bg=self.palette["sel_bg"],
+                                fg=self.palette["text"], anchor="w",
+                                font=("Segoe UI", self._px(9)))
         self.sel_label.pack(side=tk.LEFT, padx=self._px(8))
-        self.sel_actions = tk.Frame(self.selbar, bg="#fffbe0")
+        self.sel_actions = tk.Frame(self.selbar, bg=self.palette["sel_bg"])
         self.sel_actions.pack(side=tk.LEFT)
-        ttk.Button(self.selbar, text="Clear",
-                   command=self.clear_selection).pack(side=tk.LEFT,
-                                                       padx=self._px(8))
-
         # table
         table_frame = ttk.Frame(right, style="Card.TFrame",
                                 padding=(self._px(10), self._px(6),
-                                         self._px(10), self._px(10)))
+                                        self._px(10), self._px(10)))
         table_frame.pack(fill=tk.BOTH, expand=True)
-
         cols = ("word", "count", "translate", "actions")
         self.tree = ttk.Treeview(table_frame, columns=cols, show="headings",
-                                 selectmode="extended")
-
+                                selectmode="extended")
         self._cols_base = (
             ("word",      160, "Word",         "w"),
             ("count",      90, "Occurrences",  "center"),
@@ -419,16 +445,13 @@ class App(tk.Tk):
         for c, w, label, anchor in self._cols_base:
             self.tree.heading(c, text=label)
             self.tree.column(c, width=self._px(w), anchor=anchor)
-
         vsb = ttk.Scrollbar(table_frame, orient="vertical",
                             command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
-
         table_frame.rowconfigure(0, weight=1)
         table_frame.columnconfigure(0, weight=1)
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
-
         self.tree.bind("<MouseWheel>", self._on_tree_wheel)
         self.tree.bind("<Button-4>", self._on_tree_wheel)
         self.tree.bind("<Button-5>", self._on_tree_wheel)
@@ -436,13 +459,10 @@ class App(tk.Tk):
         self.tree.bind("<B1-Motion>", self._on_mouse_drag)
         self.tree.bind("<ButtonRelease-1>", self._on_mouse_up)
         self.tree.bind("<Motion>", self._on_motion)
-
-        self.tree.tag_configure("untranslated", foreground="#9aa3b2")
-        self.tree.tag_configure("odd", background="#fafbfd")
-        self.tree.tag_configure("even", background="#ffffff")
-
+        self.tree.tag_configure("untranslated", foreground=self.palette["untrans"])
+        self.tree.tag_configure("odd", background=self.palette["zebra"])
+        self.tree.tag_configure("even", background=self.palette["row"])
         self._bind_zoom_keys()
-
     # ------------------------------------------------------------ zoom
     def _bind_zoom_keys(self):
         """Ctrl + / Ctrl - / Ctrl 0 work no matter which widget has focus."""
@@ -452,15 +472,12 @@ class App(tk.Tk):
             self.bind_all(seq, lambda e: self._zoom_by(-1), add="+")
         for seq in ("<Control-0>", "<Control-KP_0>"):
             self.bind_all(seq, lambda e: self._zoom_reset(), add="+")
-
     def _zoom_by(self, direction):
         self._set_scale(round(self.scale + direction * 0.1, 2))
         return "break"
-
     def _zoom_reset(self):
         self._set_scale(1.0)
         return "break"
-
     def _set_scale(self, value):
         value = max(0.5, min(3.0, value))
         if abs(value - self.scale) < 1e-6:
@@ -474,27 +491,21 @@ class App(tk.Tk):
             pass
         self.scale = value
         self._apply_scale()
-
     def _apply_scale(self):
         """Re-apply scaled font sizes and pixel dimensions to every widget."""
         self._setup_style()
-
         self.text.configure(
             font=("Consolas", self._px(10)),
             padx=self._px(10), pady=self._px(8))
-
         for c, w, _label, _anchor in self._cols_base:
             self.tree.column(c, width=self._px(w))
-
         self.paned.configure(sashwidth=self._px(6))
         self.paned.pack_configure(padx=self._px(12), pady=self._px(12))
         panes = self.paned.panes()
         if len(panes) >= 2:
             self.paned.paneconfigure(panes[0], minsize=self._px(300))
             self.paned.paneconfigure(panes[1], minsize=self._px(400))
-
         self.sel_label.configure(font=("Segoe UI", self._px(9)))
-
     # --------------------------------------------------- mousewheel
     def _on_text_wheel(self, event):
         if event.num == 4 or event.delta > 0:
@@ -502,14 +513,12 @@ class App(tk.Tk):
         elif event.num == 5 or event.delta < 0:
             self.text.yview_scroll(1, "units")
         return "break"
-
     def _on_tree_wheel(self, event):
         if event.num == 4 or event.delta > 0:
             self.tree.yview_scroll(-1, "units")
         elif event.num == 5 or event.delta < 0:
             self.tree.yview_scroll(1, "units")
         return "break"
-
     # -------------------------------------------------------- tab logic
     def switch_tab(self, tab):
         self.current_tab = tab
@@ -518,7 +527,6 @@ class App(tk.Tk):
         self.last_click_word = None
         self.last_occurrence = 0
         self._refresh()
-
     def _update_tab_labels(self):
         n_learned = len(self.learned)
         labels = {
@@ -527,9 +535,8 @@ class App(tk.Tk):
         }
         for key, b in self.tab_buttons.items():
             b.config(text=labels[key],
-                     style="TabActive.TButton" if key == self.current_tab
-                     else "Tab.TButton")
-
+                    style="TabActive.TButton" if key == self.current_tab
+                    else "Tab.TButton")
     # -------------------------------------------------------- rendering
     def _filtered_entries(self):
         if self.current_tab == "all":
@@ -538,29 +545,23 @@ class App(tk.Tk):
         else:
             pool = ((w, c) for w, c in self.dictionary.items() if w in self.learned)
         return sorted(pool, key=lambda x: (-x[1], x[0]))
-
     def _refresh(self):
         self._update_tab_labels()
         self.tree.delete(*self.tree.get_children())
-
         entries = self._filtered_entries()
         self.rows_data = entries
-
         self.tree["displaycolumns"] = ("word", "count", "translate", "actions")
-
         for i, (w, c) in enumerate(entries):
             zebra = "odd" if i % 2 else "even"
             tr = self.translations.get(w, "")
             values = (w, c, tr if tr else "—", self._action_label_for(w))
             tags = (zebra,) if tr else (zebra, "untranslated")
             iid = self.tree.insert("", "end", iid=f"row{i}",
-                                   values=values, tags=tags)
+                                values=values, tags=tags)
             if w in self.selected:
                 self.tree.selection_add(iid)
-
         self._update_stats()
         self._update_selection_ui()
-
     def _update_row(self, word):
         iid = None
         for child in self.tree.get_children():
@@ -581,7 +582,6 @@ class App(tk.Tk):
         )
         self._update_stats()
         self._update_selection_ui()
-
     def _remove_row(self, word):
         for child in self.tree.get_children():
             if self.tree.item(child, "values")[0] == word:
@@ -590,18 +590,15 @@ class App(tk.Tk):
         self.rows_data = [r for r in self.rows_data if r[0] != word]
         self._update_stats()
         self._update_selection_ui()
-
     def _action_label_for(self, w):
         # Buttons are rendered as bracketed labels inside the Actions cell.
         if self.current_tab == "all":
             return "[✓ I know]"
         return "[↩ Return]"
-
     def _action_buttons_for(self, w):
         if self.current_tab == "all":
             return [("✓ I know", self.learn_word)]
         return [("↩ Return", self.unlearn_word)]
-
     def _update_stats(self):
         if not self.dictionary:
             self.stats_var.set("Dictionary is empty — choose a file to scan it")
@@ -613,53 +610,45 @@ class App(tk.Tk):
         vis_occur = sum(c for _, c in visible)
         learned_occur = sum(self.dictionary[w] for w in self.learned)
         untranslated = sum(1 for w, _ in visible if w not in self.translations)
-
         parts = [f"Showing: {vis_unique} of {total_unique} words",
-                 f"occurrences: {vis_occur} of {total_occur}"]
+                f"occurrences: {vis_occur} of {total_occur}"]
         if self.learned:
             parts.append(f"known: {len(self.learned)} words ({learned_occur} occurrences)")
         if untranslated:
             parts.append(f"untranslated: {untranslated}")
         self.stats_var.set(" · ".join(parts))
-
     # -------------------------------------------------- selection toolbar
     def _update_selection_ui(self):
         if len(self.selected) <= 1:
             self.selbar.pack_forget()
             return
         self.selbar.pack(fill=tk.X, pady=(self._px(4), 0),
-                         before=self.tree.master)
+                        before=self.tree.master)
         self.sel_label.config(text=f"{len(self.selected)} selected")
         for child in self.sel_actions.winfo_children():
             child.destroy()
-
         if self.current_tab == "all":
             ttk.Button(self.sel_actions, text="✓ I know all",
-                       command=self.bulk_learn).pack(side=tk.LEFT,
-                                                      padx=self._px(2))
+                    command=self.bulk_learn).pack(side=tk.LEFT,
+                                                    padx=self._px(2))
         else:
             ttk.Button(self.sel_actions, text="↩ Return all",
-                       command=self.bulk_unlearn).pack(side=tk.LEFT,
+                    command=self.bulk_unlearn).pack(side=tk.LEFT,
                                                         padx=self._px(2))
-
     def clear_selection(self):
         self.selected.clear()
         for iid in self.tree.selection():
             self.tree.selection_remove(iid)
         self._update_selection_ui()
-
     # ---------------------------------------------------- mouse handling
     def _row_word(self, iid):
         return self.tree.item(iid, "values")[0]
-
     def _actions_column_index(self):
         return "#4"
-
     def _hit_action_button(self, event, iid):
         """Return (label, callback) if the click landed on an action button, else None."""
         if self.tree.identify_column(event.x) != self._actions_column_index():
             return None
-
         # cell bounding box
         bbox = self.tree.bbox(iid, column=self._actions_column_index())
         if not bbox:
@@ -668,10 +657,8 @@ class App(tk.Tk):
         rel_x = event.x - cx
         if rel_x < 0 or rel_x > cw:
             return None
-
         word = self._row_word(iid)
         buttons = self._action_buttons_for(word)
-
         # measure rendered widths using the same font as the tree
         import tkinter.font as tkfont
         f = tkfont.Font(font=("Segoe UI", self._px(10)))
@@ -683,7 +670,6 @@ class App(tk.Tk):
                 return label, cb, word
             x_cursor += text_w + self._px(4)
         return None
-
     def _on_motion(self, event):
         """Show hand cursor over action buttons."""
         iid = self.tree.identify_row(event.y)
@@ -691,7 +677,6 @@ class App(tk.Tk):
             self.tree.configure(cursor="hand2")
         else:
             self.tree.configure(cursor="")
-
     def _on_mouse_down(self, event):
         region = self.tree.identify_region(event.x, event.y)
         if region != "cell":
@@ -701,22 +686,18 @@ class App(tk.Tk):
         if not iid:
             self._drag_active = False
             return
-
         hit = self._hit_action_button(event, iid)
         if hit:
             self._drag_active = False
             _label, callback, word = hit
             callback(word)
             return
-
         if self.tree.identify_column(event.x) == self._actions_column_index():
             # clicked action cell but not on a button — do nothing
             self._drag_active = False
             return
-
         self._drag_active = True
         index = int(iid.replace("row", ""))
-
         if event.state & 0x0004:  # Ctrl
             word = self._row_word(iid)
             if word in self.selected:
@@ -738,7 +719,6 @@ class App(tk.Tk):
                         self.tree.selection_add(iid2)
                 self._update_selection_ui()
             return
-
         # plain click: clear selection, select this row
         self.selected.clear()
         for s in self.tree.selection():
@@ -746,7 +726,6 @@ class App(tk.Tk):
         word = self._row_word(iid)
         self.selected.add(word)
         self.tree.selection_add(iid)
-
         if index == self.last_click_index and word == self.last_click_word:
             # same row clicked again → advance to next occurrence in the text
             positions = self._find_word_positions(word)
@@ -757,11 +736,9 @@ class App(tk.Tk):
             # new row → focus first occurrence
             self.last_occurrence = 0
             self._jump_to_word(word, 0)
-
         self.last_click_index = index
         self.last_click_word = word
         self._update_selection_ui()
-
     def _on_mouse_drag(self, event):
         if not self._drag_active:
             return
@@ -778,32 +755,26 @@ class App(tk.Tk):
                 self.selected.add(self._row_word(iid2))
                 self.tree.selection_add(iid2)
         self._update_selection_ui()
-
     def _on_mouse_up(self, event):
         self._drag_active = False
-
     # -------------------------------------------------------- actions
     def learn_word(self, w):
         self.learned.add(w)
         self._remove_row(w)
-
     def unlearn_word(self, w):
         self.learned.discard(w)
         self._remove_row(w)
-
     def bulk_learn(self):
         words = list(self.selected)
         for w in words:
             self.learned.add(w)
         self.selected.clear()
         self._refresh()
-
     def bulk_unlearn(self):
         for w in list(self.selected):
             self.learned.discard(w)
         self.selected.clear()
         self._refresh()
-
     # ------------------------------------------------------- text jump
     def _find_word_positions(self, word):
         """Return list of (start, end) text indices for whole-word matches of `word`."""
@@ -812,18 +783,17 @@ class App(tk.Tk):
         start = "1.0"
         while True:
             pos = self.text.search(word, start, stopindex="end",
-                                   nocase=True, count=count)
+                                nocase=True, count=count)
             if not pos or count.get() == 0:
                 break
             end = f"{pos}+{count.get()}c"
             before = self.text.get(f"{pos}-1c", pos) if pos != "1.0" else ""
             after = self.text.get(end, f"{end}+1c")
             if (not before or not re.match(r"[A-Za-z0-9\u0400-\u04FF-]", before)) and \
-               (not after or not re.match(r"[A-Za-z0-9\u0400-\u04FF-]", after)):
+            (not after or not re.match(r"[A-Za-z0-9\u0400-\u04FF-]", after)):
                 positions.append((pos, end))
             start = end
         return positions
-
     def _jump_to_word(self, word, occurrence=0):
         """Highlight all occurrences, scroll to and focus the given occurrence."""
         self.text.tag_remove("highlight", "1.0", "end")
@@ -840,14 +810,13 @@ class App(tk.Tk):
         self.text.tag_remove(tk.SEL, "1.0", "end")
         self.text.tag_add(tk.SEL, pos, end)
         self.text.focus_set()
-
     # ------------------------------------------------------- IO: text
     def load_text_file(self):
         path = filedialog.askopenfilename(
             filetypes=[
                 ("Books & documents",
-                 "*.txt *.text *.md *.markdown *.rtf *.pdf *.docx "
-                 "*.epub *.html *.htm *.xhtml *.lit *.log *.srt"),
+                "*.txt *.text *.md *.markdown *.rtf *.pdf *.docx "
+                "*.epub *.html *.htm *.xhtml *.lit *.log *.srt"),
                 ("Text files", "*.txt *.text *.log *.md"),
                 ("RTF", "*.rtf"),
                 ("PDF", "*.pdf"),
@@ -867,14 +836,12 @@ class App(tk.Tk):
         except OSError as e:
             messagebox.showerror("Error", f"Failed to read file:\n{e}")
             return
-
         if not text or not text.strip():
             messagebox.showwarning(
                 "Open",
                 f'No text could be extracted from:\n{os.path.basename(path)}\n\n'
                 "If this is a scanned PDF, OCR is required first.")
             return
-
         self.text.delete("1.0", "end")
         self.text.insert("1.0", text)
         words = extract_words(text)
@@ -884,7 +851,6 @@ class App(tk.Tk):
         for w in words:
             self.dictionary[w] = self.dictionary.get(w, 0) + 1
         self._refresh()
-
     # ------------------------------------------------------- IO: CSV
     def load_csv(self):
         path = filedialog.askopenfilename(
@@ -915,18 +881,15 @@ class App(tk.Tk):
                 f'Failed to load "{os.path.basename(path)}":\n{e}')
             return
         self._refresh()
-
     def save_csv(self):
         if not self.dictionary:
             messagebox.showinfo("Save", "Nothing to save — the dictionary is empty.")
             return
-
         if self.current_tab == "all":
             rows = [(w, c) for w, c in self.dictionary.items()
                     if w not in self.learned]
         else:
             rows = [(w, self.dictionary[w]) for w in self.learned]
-
         path = filedialog.asksaveasfilename(
             defaultextension=".csv",
             initialfile=f"{self.current_tab}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
@@ -943,14 +906,19 @@ class App(tk.Tk):
             messagebox.showerror("Error", f"Failed to save file:\n{e}")
             return
         messagebox.showinfo("Saved", f"Saved {self.current_tab} CSV to:\n{path}")
-
     # ------------------------------------------------------- state
     def _restore_state(self):
         state = load_state()
+            # theme first — it may rebuild the UI
+        saved_theme = state.get("theme", "light")
+        if saved_theme in ("light", "dark") and saved_theme != self.theme_name:
+            self.set_theme(saved_theme)
+        else:
+            self._update_theme_button()
+
         if not state:
             self.geometry("1400x720")
             return
-
         geom = state.get("geometry")
         if isinstance(geom, str) and geom:
             try:
@@ -959,11 +927,9 @@ class App(tk.Tk):
                 self.geometry("1400x720")
         else:
             self.geometry("1400x720")
-
         text = state.get("text", "")
         if isinstance(text, str) and text:
             self.text.insert("1.0", text)
-
         raw_dict = state.get("dictionary", {})
         if isinstance(raw_dict, dict):
             for w, c in raw_dict.items():
@@ -971,11 +937,9 @@ class App(tk.Tk):
                     self.dictionary[str(w).lower()] = int(c)
                 except (TypeError, ValueError):
                     self.dictionary[str(w).lower()] = 1
-
         raw_learned = state.get("learned", [])
         if isinstance(raw_learned, list):
             self.learned = {str(w).lower() for w in raw_learned}
-
         tab = state.get("current_tab", "all")
         if tab in ("all", "learned"):
             self.current_tab = tab
@@ -987,6 +951,7 @@ class App(tk.Tk):
             "dictionary": self.dictionary,
             "learned": sorted(self.learned),
             "current_tab": self.current_tab,
+            "theme": self.theme_name,     
         }
         try:
             with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -995,7 +960,7 @@ class App(tk.Tk):
             messagebox.showwarning(
                 "State",
                 f'Failed to save "{STATE_FILE}":\n{e}')
-
+            
     def _on_close(self):
         self._save_state()
         self.destroy()
