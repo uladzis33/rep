@@ -212,11 +212,18 @@ def extract_text_from_file(path: str) -> str:
         raise ValueError(f"Unsupported file type '{ext}': {e}")
 
 def load_translation_dict():
-    """Load dict.json (word -> translation). Missing or broken file -> empty dict."""
-    if not os.path.exists(DICT_FILE):
-        return {}
+
+    def resource_path(relative_path):
+        """ Get the absolute path to the resource, compatible with development and PyInstaller packaging modes """
+        if hasattr(sys, '_MEIPASS'):
+            # Running in PyInstaller packaged environment
+            return os.path.join(sys._MEIPASS, relative_path)
+        # Running in normal development environment
+        return os.path.join(os.path.abspath("."), relative_path)
+
+
     try:
-        with open(DICT_FILE, "r", encoding="utf-8") as f:
+        with open(resource_path(DICT_FILE), "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("dict.json must contain a JSON object")
