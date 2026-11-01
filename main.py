@@ -5,7 +5,6 @@ from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 
 import ui.colors
-
 # --- optional format support (install as needed) ---
 # pip install pypdf            (PDF)
 # pip install striprtf         (RTF)
@@ -42,6 +41,58 @@ WORD_RE = re.compile(r"[A-Za-z0-9\u0400-\u04FF]+(?:-[A-Za-z0-9\u0400-\u04FF]+)*"
 DICT_FILE = "dict.json"
 STATE_FILE = "state.json"
 
+import sys
+
+def set_titlebar_color(window, hex_color: str, dark: bool = True):
+    """
+    Color the native Windows title bar.
+    Returns True on success, False if unsupported (non-Windows / old build).
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return False
+
+    # --- helpers ---
+    def _to_colorref(hex_str: str) -> int:
+        # DWM wants 0x00BBGGRR, not RGB
+        h = hex_str.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return (b << 16) | (g << 8) | r
+
+    hwnd = wintypes.HWND(window.winfo_id())
+    # we need the *top-level* window, not the child window Tk gives us
+    user32 = ctypes.windll.user32
+    hwnd = wintypes.HWND(user32.GetAncestor(hwnd, 2))  # GA_ROOT = 2
+
+    dwm = ctypes.windll.dwmapi
+    colorref = ctypes.c_int(_to_colorref(hex_color))
+
+    # DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Win10 20H1+ / Win11)
+    # older builds used 19; try both
+    dark_flag = ctypes.c_int(1 if dark else 0)
+    for attr in (20, 19):
+        res = dwm.DwmSetWindowAttribute(
+            hwnd, attr, ctypes.byref(dark_flag), ctypes.sizeof(dark_flag))
+        if res == 0:
+            break
+
+    # DWMWA_CAPTION_COLOR = 35 (Win11 22H2+ only)
+    # DWMWA_BORDER_COLOR  = 34
+    try:
+        dwm.DwmSetWindowAttribute(
+            hwnd, 35, ctypes.byref(colorref), ctypes.sizeof(colorref))
+        dwm.DwmSetWindowAttribute(
+            hwnd, 34, ctypes.byref(colorref), ctypes.sizeof(colorref))
+    except Exception:
+        pass
+
+    # force a redraw so the change takes effect immediately
+    user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0027)  # SWP_NOMOVE|SIZE|ZORDER|NOACTIVATE
+    return True
 
 def extract_words(text: str):
     return [m.group(0).lower() for m in WORD_RE.finditer(text)]
@@ -334,7 +385,9 @@ class App(tk.Tk):
         # redraw table from existing data
         self._refresh()
         self._update_theme_button()
-        
+        self.update_idletasks()
+        set_titlebar_color(self, self.palette["bg"], dark=(name == "dark"))
+
     def _update_theme_button(self):
         if not hasattr(self, "theme_btn"):
             return
@@ -348,8 +401,7 @@ class App(tk.Tk):
         bar = ttk.Frame(self, padding=(self._px(12), self._px(10)))
         bar.pack(side=tk.TOP, fill=tk.X)
         ttk.Label(bar, text="📚  Text Scanner", style="Title.TLabel").pack(side=tk.LEFT)
-        ttk.Label(bar, text="dictionary", style="Stats.TLabel").pack(
-            side=tk.LEFT, padx=(self._px(6), 0))
+        
         # store the reference so we can update the icon when theme changes
         self.theme_btn = ttk.Button(bar, text="🌙 Dark",
                                     command=self.toggle_theme)
